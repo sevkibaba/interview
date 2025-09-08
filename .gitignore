@@ -12,3 +12,5 @@ qa/playwright/.cache/
 
 # ignoring the .idea folder
 .idea
+.env
+data/output
