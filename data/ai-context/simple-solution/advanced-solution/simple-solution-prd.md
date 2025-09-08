@@ -34,3 +34,9 @@ The page for the API is here: https://api.nasa.gov
     - The number of close approaches recorded in each year present in the data
 
 
+### Task List
+1 - Create a neo api service that can fetch data from api with batches, the batch size should be a parameter
+2 - Create a writer service record the batches in memory and into parquet files under output directory under raw folder
+2 - Calculate the aggregations on the fly and record the results into aggregations folder under output folder in parquet format
+3 - use simple-solution/recall_data.py to use service functions
+4 - create a simple rate limit while hitting the api, like a simple time.sleep() function, make at most two requests per second
