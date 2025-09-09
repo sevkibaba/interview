@@ -117,7 +117,7 @@ class NeoDataWriter:
         df = pd.DataFrame(transformed_data)
         
         # Calculate partition range (20 NEOs per partition)
-        partition_start = ((batch_number - 1) // 20) * 20 + 1
+        partition_start = ((batch_number - 1) % 20) * 20 + 1
         partition_end = partition_start + 19
         
         # Create partition directory
