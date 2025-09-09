@@ -114,7 +114,7 @@ docker run --rm -u root \
   -v $(pwd)/advanced-solution/output:/app/input \
   -v $(pwd)/advanced-solution/output:/app/output \
   neo-spark-job \
-  --start_batch 1 --end_batch 20 \
+  --start_batch 1 --end_batch 200 \
   --input_dir /app/input --output_dir /app/output
 
 # Run with different batch range

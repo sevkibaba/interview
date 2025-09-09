@@ -31,7 +31,6 @@ class NeoDataWriterAdvSol:
     """
     Advanced solution service to write NEO data to parquet files using PyArrow.
     """
-
     def __init__(self, output_dir: str = "output"):
         self.output_dir = output_dir
         self.raw_dir = os.path.join(output_dir, "raw")
@@ -108,10 +107,10 @@ class NeoDataWriterAdvSol:
             first_observation_date=orbital_data.get('first_observation_date'),
             last_observation_date=orbital_data.get('last_observation_date'),
             observations_used=safe_int(orbital_data.get('observations_used')),
-            orbital_period=safe_float(orbital_data.get('orbital_period'))
+            orbital_period=safe_float(orbital_data.get('orbital_period')),
+            close_approach_data=neo.get('close_approach_data')  # Store full close approach data
         )
-    
-    
+
     def write_batch_adv_sol(self, neos: List[Dict[str, Any]], batch_number: int) -> str:
         """
         Write a batch of NEOs to a parquet file with partitioning using PyArrow.

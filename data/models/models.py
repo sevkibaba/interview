@@ -32,6 +32,7 @@ class NeoDataAdvSol:
     last_observation_date: Optional[str]
     observations_used: Optional[int]
     orbital_period: Optional[float]
+    close_approach_data: Optional[List[Dict[str, Any]]]  # Full close approach data for Spark processing
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for PyArrow table creation."""
@@ -52,7 +53,8 @@ class NeoDataAdvSol:
             'first_observation_date': self.first_observation_date,
             'last_observation_date': self.last_observation_date,
             'observations_used': self.observations_used,
-            'orbital_period': self.orbital_period
+            'orbital_period': self.orbital_period,
+            'close_approach_data': self.close_approach_data
         }
 
 
@@ -74,7 +76,8 @@ NEO_SCHEMA_ADV_SOL = pa.schema([
     pa.field("first_observation_date", pa.string()),
     pa.field("last_observation_date", pa.string()),
     pa.field("observations_used", pa.int32()),
-    pa.field("orbital_period", pa.float64())
+    pa.field("orbital_period", pa.float64()),
+    pa.field("close_approach_data", pa.string(), nullable=True)  # JSON string for complex nested data
 ])
 
 
@@ -148,7 +151,11 @@ class PyArrowTableManagerAdvSol:
                 else:
                     # Convert value to appropriate type
                     try:
-                        if pa.types.is_string(field_type):
+                        if field_name == "close_approach_data":
+                            # Special handling for close_approach_data - convert to JSON string
+                            import json
+                            processed_record[field_name] = json.dumps(value) if value is not None else None
+                        elif pa.types.is_string(field_type):
                             processed_record[field_name] = str(value) if value is not None else None
                         elif pa.types.is_integer(field_type):
                             processed_record[field_name] = int(value) if value is not None else None

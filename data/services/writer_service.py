@@ -33,7 +33,7 @@ class NeoDataWriter:
         # Find the closest approach
         closest_approach = None
         if 'close_approach_data' in neo and neo['close_approach_data']:
-            # Sort by miss distance to find closest
+            # Sort by miss distance to find closest (using astronomical units for consistency)
             approaches = sorted(
                 neo['close_approach_data'], 
                 key=lambda x: float(x.get('miss_distance', {}).get('astronomical', '999'))
@@ -47,6 +47,28 @@ class NeoDataWriter:
         # Extract orbital data
         orbital_data = neo.get('orbital_data', {})
         
+        # Handle data type conversions and None values (consistent with advanced solution)
+        def safe_float(value):
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+        
+        def safe_int(value):
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return None
+        
+        def safe_bool(value):
+            if value is None:
+                return None
+            return bool(value)
+        
         return {
             'id': neo.get('id'),
             'neo_reference_id': neo.get('neo_reference_id'),
@@ -54,12 +76,12 @@ class NeoDataWriter:
             'name_limited': neo.get('name_limited'),
             'designation': neo.get('designation'),
             'nasa_jpl_url': neo.get('nasa_jpl_url'),
-            'absolute_magnitude_h': neo.get('absolute_magnitude_h'),
-            'is_potentially_hazardous_asteroid': neo.get('is_potentially_hazardous_asteroid'),
-            'minimum_estimated_diameter_meters': meters_diameter.get('estimated_diameter_min'),
-            'maximum_estimated_diameter_meters': meters_diameter.get('estimated_diameter_max'),
+            'absolute_magnitude_h': safe_float(neo.get('absolute_magnitude_h')),
+            'is_potentially_hazardous_asteroid': safe_bool(neo.get('is_potentially_hazardous_asteroid')),
+            'minimum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_min')),
+            'maximum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_max')),
             'closest_approach_miss_distance_km': (
-                float(closest_approach.get('miss_distance', {}).get('kilometers', 0)) 
+                safe_float(closest_approach.get('miss_distance', {}).get('kilometers', 0)) 
                 if closest_approach else None
             ),
             'closest_approach_date': (
@@ -67,13 +89,13 @@ class NeoDataWriter:
                 if closest_approach else None
             ),
             'closest_approach_relative_velocity_km_per_sec': (
-                float(closest_approach.get('relative_velocity', {}).get('kilometers_per_second', 0)) 
+                safe_float(closest_approach.get('relative_velocity', {}).get('kilometers_per_second', 0)) 
                 if closest_approach else None
             ),
             'first_observation_date': orbital_data.get('first_observation_date'),
             'last_observation_date': orbital_data.get('last_observation_date'),
-            'observations_used': orbital_data.get('observations_used'),
-            'orbital_period': orbital_data.get('orbital_period')
+            'observations_used': safe_int(orbital_data.get('observations_used')),
+            'orbital_period': safe_float(orbital_data.get('orbital_period'))
         }
     
     def _update_aggregations(self, neo: Dict[str, Any]):
@@ -83,15 +105,19 @@ class NeoDataWriter:
         # Count close approaches (< 0.2 AU)
         if 'close_approach_data' in neo and neo['close_approach_data']:
             for approach in neo['close_approach_data']:
-                miss_distance_au = approach.get('miss_distance', {}).get('astronomical')
-                if miss_distance_au and float(miss_distance_au) < 0.2:
-                    self.close_approaches_count += 1
-                    
-                    # Count by year
-                    approach_date = approach.get('close_approach_date')
-                    if approach_date:
-                        year = approach_date.split('-')[0]
-                        self.close_approaches_by_year[year] = self.close_approaches_by_year.get(year, 0) + 1
+                try:
+                    miss_distance_au = approach.get('miss_distance', {}).get('astronomical')
+                    if miss_distance_au and float(miss_distance_au) < 0.2:
+                        self.close_approaches_count += 1
+                        
+                        # Count by year
+                        approach_date = approach.get('close_approach_date')
+                        if approach_date:
+                            year = approach_date.split('-')[0]
+                            self.close_approaches_by_year[year] = self.close_approaches_by_year.get(year, 0) + 1
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.warning(f"Error processing close approach data: {e}")
+                    continue
     
     def write_batch(self, neos: List[Dict[str, Any]], batch_number: int, update_aggregations: bool = True) -> str:
         """

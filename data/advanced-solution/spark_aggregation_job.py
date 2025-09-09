@@ -101,14 +101,16 @@ def read_neo_data(spark, input_dir, start_batch, end_batch):
     return df
 
 
-def calculate_close_approaches_aggregations(df, spark):
+def calculate_aggregations(df, spark):
     """
-    Calculate close approaches aggregations from the NEO data by exploding the close_approach_data.
+    Calculate the required aggregations:
+    1. Total number of close approaches under 0.2 AU
+    2. Number of close approaches by year
     """
-    logger.info("Calculating close approaches aggregations")
+    logger.info("Calculating aggregations")
     
     # Parse JSON and explode close approach data
-    from pyspark.sql.functions import from_json, explode, col, when, size, split, regexp_extract
+    from pyspark.sql.functions import from_json, explode, col, year, split, regexp_extract
     from pyspark.sql.types import ArrayType, StructType, StructField, StringType, DoubleType
     
     # Define schema for close approach data
@@ -135,75 +137,15 @@ def calculate_close_approaches_aggregations(df, spark):
         .withColumn("approach", explode(col("close_approach_parsed"))) \
         .drop("close_approach_data", "close_approach_parsed")
     
-    # Count total NEOs
-    total_neos = df.count()
+    # Filter for close approaches under 0.2 AU
+    df_close_approaches = df_with_approaches \
+        .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2)
     
-    # Count hazardous asteroids
-    hazardous_count = df.filter(col("is_potentially_hazardous_asteroid") == True).count()
+    # 1. Total number of close approaches under 0.2 AU
+    total_close_approaches = df_close_approaches.count()
     
-    # Count NEOs with close approach data
-    neos_with_close_approaches = df.filter(col("close_approach_data").isNotNull()).count()
-    
-    # Count close approaches under 0.2 AU
-    close_approaches_under_02_au = df_with_approaches \
-        .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2) \
-        .count()
-    
-    # Create aggregations DataFrame
-    aggregations_data = [
-        ("total_neos", total_neos),
-        ("hazardous_asteroids", hazardous_count),
-        ("neos_with_close_approach_data", neos_with_close_approaches),
-        ("close_approaches_under_02_au", close_approaches_under_02_au)
-    ]
-    
-    aggregations_df = spark.createDataFrame(aggregations_data, ["metric", "value"])
-    
-    logger.info(f"Total NEOs: {total_neos}")
-    logger.info(f"Hazardous asteroids: {hazardous_count}")
-    logger.info(f"NEOs with close approach data: {neos_with_close_approaches}")
-    logger.info(f"Close approaches under 0.2 AU: {close_approaches_under_02_au}")
-    
-    return aggregations_df
-
-
-def calculate_yearly_aggregations(df, spark):
-    """
-    Calculate yearly aggregations from the NEO data by exploding close_approach_data.
-    """
-    logger.info("Calculating yearly aggregations")
-    
-    # Parse JSON and explode close approach data
-    from pyspark.sql.functions import from_json, explode, col, when, size, split, regexp_extract, year
-    from pyspark.sql.types import ArrayType, StructType, StructField, StringType, DoubleType
-    
-    # Define schema for close approach data
-    close_approach_schema = ArrayType(StructType([
-        StructField("close_approach_date", StringType(), True),
-        StructField("epoch_date_close_approach", StringType(), True),
-        StructField("relative_velocity", StructType([
-            StructField("kilometers_per_second", StringType(), True),
-            StructField("kilometers_per_hour", StringType(), True),
-            StructField("miles_per_hour", StringType(), True)
-        ]), True),
-        StructField("miss_distance", StructType([
-            StructField("astronomical", StringType(), True),
-            StructField("lunar", StringType(), True),
-            StructField("kilometers", StringType(), True),
-            StructField("miles", StringType(), True)
-        ]), True),
-        StructField("orbiting_body", StringType(), True)
-    ]))
-    
-    # Parse JSON and explode close approach data
-    df_with_approaches = df.filter(col("close_approach_data").isNotNull()) \
-        .withColumn("close_approach_parsed", from_json(col("close_approach_data"), close_approach_schema)) \
-        .withColumn("approach", explode(col("close_approach_parsed"))) \
-        .drop("close_approach_data", "close_approach_parsed")
-    
-    # Filter for close approaches under 0.2 AU and extract year
-    df_with_year = df_with_approaches \
-        .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2) \
+    # 2. Extract year and count by year
+    df_with_year = df_close_approaches \
         .withColumn("approach_year", year(col("approach.close_approach_date")))
     
     # Count approaches by year
@@ -213,38 +155,39 @@ def calculate_yearly_aggregations(df, spark):
         .agg(count("*").alias("count")) \
         .orderBy("approach_year")
     
-    # Convert to the expected format
+    # Convert yearly data to the expected format
     yearly_data = yearly_aggregations.collect()
     
-    aggregations_data = []
+    aggregations_data = [
+        ("total_close_approaches_under_02_au", total_close_approaches)
+    ]
+    
+    # Add yearly breakdowns
     for row in yearly_data:
         year_val = row["approach_year"]
         count_val = row["count"]
         aggregations_data.append((f"close_approaches_year_{year_val}", count_val))
     
-    # Convert to DataFrame
-    if aggregations_data:
-        yearly_df = spark.createDataFrame(aggregations_data, ["metric", "value"])
-    else:
-        yearly_df = spark.createDataFrame([], ["metric", "value"])
+    # Create final DataFrame
+    aggregations_df = spark.createDataFrame(aggregations_data, ["metric", "value"])
     
-    return yearly_df
+    logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
+    logger.info(f"Yearly breakdown: {len(yearly_data)} years with close approaches")
+    
+    return aggregations_df
 
 
-def write_aggregations(aggregations_df, yearly_df, output_dir, start_batch, end_batch):
+def write_aggregations(aggregations_df, output_dir, start_batch, end_batch):
     """
     Write aggregations to output directory with batch range in the path.
     """
     logger.info(f"Writing aggregations to {output_dir}")
     
-    # Combine all aggregations
-    all_aggregations = aggregations_df.union(yearly_df)
-    
     # Create output path with batch range
     batch_range = f"batches-{start_batch}-{end_batch}"
     output_path = f"{output_dir}/aggregations/{batch_range}"
     
-    all_aggregations.write \
+    aggregations_df.coalesce(1).write \
         .mode("overwrite") \
         .option("parquet.enable.summary-metadata", "false") \
         .option("parquet.enable.dictionary", "false") \
@@ -257,7 +200,7 @@ def write_aggregations(aggregations_df, yearly_df, output_dir, start_batch, end_
     
     # Show results
     logger.info("Aggregation results:")
-    all_aggregations.show(truncate=False)
+    aggregations_df.show(truncate=False)
     
     return output_path
 
@@ -286,11 +229,10 @@ def main():
         df = read_neo_data(spark, args.input_dir, args.start_batch, args.end_batch)
         
         # Calculate aggregations
-        aggregations_df = calculate_close_approaches_aggregations(df, spark)
-        yearly_df = calculate_yearly_aggregations(df, spark)
+        aggregations_df = calculate_aggregations(df, spark)
         
         # Write results
-        output_path = write_aggregations(aggregations_df, yearly_df, args.output_dir, args.start_batch, args.end_batch)
+        output_path = write_aggregations(aggregations_df, args.output_dir, args.start_batch, args.end_batch)
         
         logger.info("Aggregation job completed successfully")
         return 0
