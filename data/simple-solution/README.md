@@ -60,9 +60,6 @@ python simple-solution/recall_data.py --backfill 1 20
 # Backfill batches 1-100
 python simple-solution/recall_data.py --backfill 1 100
 
-# Backfill a single batch (e.g., batch 5)
-python simple-solution/recall_data.py --backfill 5 5
-```
 
 ### Recalculate Aggregations
 Recalculate aggregations from existing raw files:
@@ -150,32 +147,6 @@ output/
 - **Browse API**: `/neo/rest/v1/neo/browse`
 - **Default Key**: DEMO_KEY (limited rate)
 
-## Examples
-
-### Complete Workflow
-```bash
-# 1. Full initial run
-python simple-solution/recall_data.py
-
-# 2. Backfill problematic batches (e.g., batches 1-20)
-python simple-solution/recall_data.py --backfill 1 20
-
-# 3. Recalculate aggregations after backfill
-python simple-solution/recall_data.py --recalc 1 200
-```
-
-### Troubleshooting
-```bash
-# Backfill specific batch range
-python simple-solution/recall_data.py --backfill 1 10
-
-# Backfill a single batch
-python simple-solution/recall_data.py --backfill 5 5
-
-# Recalculate aggregations for specific range
-python simple-solution/recall_data.py --recalc 1 50
-```
-
 ## Logging
 
 The script provides detailed logging including:
@@ -201,16 +172,6 @@ Log level can be adjusted by modifying the logging configuration in the script.
 - **Partitioned Storage**: Optimized for Spark and big data tools
 - **Incremental Updates**: Support for backfilling without full reprocessing
 
-## Environment Variables
-
-The script supports the following environment variables (configured in `.env` file):
-
-| Variable | Description | Default | Example |
-|----------|-------------|---------|---------|
-| `API_KEY` | NASA API key for higher rate limits | `DEMO_KEY` | `your_api_key_here` |
-| `OUTPUT_DIR` | Output directory for parquet files | `output` | `/path/to/output` |
-| `LOG_LEVEL` | Logging level | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-
 ## Dependencies
 
 - `requests>=2.28.0`: HTTP client for API calls
@@ -221,3 +182,13 @@ The script supports the following environment variables (configured in `.env` fi
 ## Support
 
 For issues or questions, check the logs for detailed error messages and ensure all dependencies are properly installed.
+
+## Advantages
+- Cost efficient
+- Faster for small operations
+- Easier to maintain and understand if the context is fixed
+
+## Disadvantages
+- Limited scalability
+- If there occur errors, cost is increased more than a modular approach 
+- Hard to reuse for other purposes

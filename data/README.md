@@ -38,3 +38,11 @@ locally at development scale.
 
 ### Submitting your coding exercise
 Once you have finished your script, please create a PR into Tekmetric/interview. Don't forget to update the gitignore if that is required!
+
+### Additional Notes
+- The raw data should be recorded in Avro for a longer term operation since it is easy change schema and has high throughput than parquet files.
+- In addition to record raw data and having api requests in another module is a better approach than having them all in a spark job. The machines used for spark jobs are expensive for an api-scrape operation, and the parallel executor architecture is not suitable for api scraping because it lacks the politeness in its nature. Moreover, it would be very expensive and complex to handles errors on the fly.
+- Recording raw data in its own place is better for future cases. The new report requirements could be build on top of that.
+- It would be better to have a rate limiter that also takes the api limits into account. Since there is a limit in the api requests in an hourly manner, tha api scraper part is not designed to scale more.
+- There should be an alerting system and another folder to record unexpected data after a validation step. It could be the case that the incoming data is mission critical and needs to be handled properly.
+- The dataframe operation can be refactorred to pyarrow operations for better performance. 

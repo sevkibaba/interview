@@ -36,3 +36,10 @@ The page for the API is here: https://api.nasa.gov
 
 ### Task List
 
+- Do all tasks one by one and let me approve to continue with the next task.
+- We will improve the simple-solution recall_data.py. We will create a spark job to read the parquet files and calculate the aggregations, so don't use the part from simple solution here.
+- Examine the code and convert dataframe usages into pyarrow operations with new functions, add a name suffix like `_adv_sol`. Create models to be used with pyarrow.
+- Create a spark job to calculate aggregations, create a docker file to run this job in a container which can take the parameters; start_batch, end_batch, input_dir, output_dir. 
+- Create README under th advanced-solution folder include details on how to run the app and the spark jobs.
+- Investigate the raw data and try to create another container that has a presto like environment, create a seperate README under advanced-solution/presto for this part, use this folder for other related documents. Our aim to have the ability to query the data with presto like environment. Before starting list your action items with numbers and let me approve them.
+- 
