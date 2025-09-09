@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  neo-spark-job:
+    build: .
+    volumes:
+      - ./input:/app/input:ro
+      - ./output:/app/output
+    environment:
+      - SPARK_MASTER=local[*]
+    command: >
+      --start_batch 1
+      --end_batch 200
+      --input_dir /app/input
+      --output_dir /app/output
+    profiles:
+      - spark-job
+
+  neo-data-fetcher:
+    build: .
+    volumes:
+      - ./output:/app/output
+    environment:
+      - API_KEY=${API_KEY:-DEMO_KEY}
+      - OUTPUT_DIR=/app/output
+    command: python3 advanced-solution/recall_data_adv_sol.py --output-dir /app/output
+    profiles:
+      - data-fetcher
+
+  neo-full-pipeline:
+    build: .
+    volumes:
+      - ./output:/app/output
+    environment:
+      - API_KEY=${API_KEY:-DEMO_KEY}
+      - OUTPUT_DIR=/app/output
+    command: >
+      bash -c "
+        echo 'Fetching NEO data...' &&
+        python3 advanced-solution/recall_data_adv_sol.py --output-dir /app/output &&
+        echo 'Running Spark aggregation job...' &&
+        spark-submit --master local[*] spark_aggregation_job.py 
+          --start_batch 1 
+          --end_batch 200 
+          --input_dir /app/output 
+          --output_dir /app/output
+      "
+    profiles:
+      - full-pipeline
