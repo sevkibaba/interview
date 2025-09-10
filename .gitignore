@@ -18,3 +18,5 @@ data/advanced-solution/output/*
 
 .venv/
 data/services/__pycache__/
+data/tests/test_data/*
+data/tests/test_output/*

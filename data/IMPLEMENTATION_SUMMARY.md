@@ -245,6 +245,51 @@ output/
 
 This implementation provides a robust, scalable foundation for NASA NEO data processing with room for future enhancements and optimizations.
 
+## Testing
+
+### Test Suite Overview
+The project includes a test suite located in `data/tests/` that covers both the simple and advanced solutions:
+
+#### Test Types
+1. **PyArrow Writer Service Tests** (`test_writer_service.py`)
+   - Unit tests for data transformation and parquet file writing
+   - Tests with hardcoded sample API responses
+   - Verifies correct column mapping, data types, and file structure
+   - Uses temporary directories for isolated testing
+
+2. **Spark Aggregation Job Tests** (`test_spark_pipeline.py`)
+   - Integration tests for the complete Spark processing pipeline
+   - Uses the same Docker image and command pattern as production
+   - Tests with sample NEO data from JSON files
+   - Verifies aggregation calculations and output structure
+   - Compares results against expected values from files
+
+#### Test Data
+- **Sample NEO Data** (`sample_neo_data.json`): 3 test NEOs with different close approach scenarios
+- **Expected Results** (`expected_aggregation_results.json`): Expected aggregation values for verification
+- **Test Data Structure**: Mirrors production directory structure with proper partitioning
+
+#### Running Tests
+```bash
+# Run all tests
+cd data/tests
+python3 run_tests.py
+
+# Run individual test suites
+python3 -m unittest test_writer_service.py -v
+python3 test_spark_pipeline.py
+```
+
+#### Test Coverage
+- ✅ PyArrow data transformation and parquet writing
+- ✅ Spark job execution with Docker
+- ✅ Input data validation and processing
+- ✅ Output structure verification
+- ✅ Aggregation calculation accuracy
+- ✅ Yearly breakdown correctness
+- ✅ Error handling and edge cases
+
+The test suite ensures that both solutions work correctly and can be used as a foundation for additional testing in a production environment.
 
 ### Additional Notes
 - The raw data should be recorded in Avro for a longer term operation since it is easy change schema and has high throughput rate than parquet files. It is easier to debug the data and easier to have partial backfills with a clever partitioning design.
@@ -256,4 +301,4 @@ This implementation provides a robust, scalable foundation for NASA NEO data pro
 - In the advanced solution part, the raw files asked to have all rows exploded from the `close_approach_data`. This is not a best practice (see the previous item). We want to separate ingestion and computation pipes. It might seem cost-effective for this case or let's say a simpler case, but in a production environment, you want to explode them after ingesting the raw data using a different pipe. For this design, there would be another step like ingest raw data -> explode raw data -> compute aggregations. For the interview case, we combine the exploding and aggregation steps for simplicity. If there are other aggregations to be computed, we would separate them into different steps. 
 - There can be a presto (trino) like environment to query the data. This is not implemented in this solution. If the reporting requirements changes a lot, it would be better to have a presto like environment to query the data instead of calculating the results with Spark jobs. In this case there should be middle stages (Spark jobs) to decrease the data size for the query environment. 
 - The jobs can also be orchestrated with a tool like Airflow. This is not implemented in this solution.
-- 
+- Provided comprehensive tests for both solutions, including unit tests and integration tests. The test suite covers PyArrow writer service functionality and Spark aggregation job processing using the same Docker-based approach as the production pipeline.
