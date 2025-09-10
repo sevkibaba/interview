@@ -29,7 +29,7 @@ This script fetches Near Earth Object (NEO) data from NASA's API and saves it to
 
 1. Navigate to the project directory:
    ```bash
-   cd /path/to/tekmetric/interview
+   cd /path/to/tekmetric/interview/data/
    ```
 
 2. Install dependencies:

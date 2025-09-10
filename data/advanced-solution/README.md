@@ -20,7 +20,6 @@ The advanced solution consists of several key components:
 
 3. **Main Script** (`recall_data_adv_sol.py`)
    - CLI interface for data fetching
-   - Orchestrates the data pipeline
    - Supports backfill operations
 
 4. **Spark Aggregation Job** (`spark_aggregation_job.py`)
@@ -51,14 +50,12 @@ The advanced solution consists of several key components:
 - **Docker Support**: Easy deployment and environment consistency
 - **Parameterized Jobs**: Flexible batch processing with command-line arguments
 - **Volume Mounting**: Persistent data storage
-- **Multi-Service**: Docker Compose for complex workflows
 
 ## Installation
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.11+
 - Docker and Docker Compose
-- Java 11+ (for Spark)
 
 ### Setup
 
@@ -263,18 +260,6 @@ output/
    ls -la ./output/raw/
    ```
 
-3. **Memory Issues**
-   ```bash
-   # Increase Docker memory limits
-   # In Docker Desktop: Settings > Resources > Memory
-   ```
-
-4. **Permission Issues**
-   ```bash
-   # Fix script permissions
-   chmod +x run_spark_job.sh
-   ```
-
 ### Debug Mode
 
 Enable debug logging:
@@ -308,33 +293,3 @@ pa.parquet.write_table(table, filepath, compression='snappy')
 # Enable dictionary encoding
 pa.parquet.write_table(table, filepath, use_dictionary=True)
 ```
-
-## Future Enhancements
-
-### Planned Improvements
-1. **Streaming Processing**: Real-time data processing with Spark Streaming
-2. **ML Integration**: Machine learning pipelines for NEO classification
-3. **Graph Processing**: Network analysis of NEO relationships
-4. **Time Series**: Advanced time series analysis for orbital data
-5. **API Gateway**: REST API for data access
-6. **Monitoring**: Prometheus/Grafana integration
-7. **Caching**: Redis integration for frequently accessed data
-
-### Scalability Options
-1. **Kubernetes**: Deploy on K8s for production scaling
-2. **Distributed Storage**: S3/HDFS for large datasets
-3. **Message Queues**: Kafka for real-time data ingestion
-4. **Database Integration**: PostgreSQL/MongoDB for metadata
-5. **Cloud Deployment**: AWS/Azure/GCP integration
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## License
-
-This project is part of the Tekmetric interview process.

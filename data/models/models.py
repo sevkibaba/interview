@@ -167,6 +167,7 @@ class PyArrowTableManagerAdvSol:
                             processed_record[field_name] = value
                     except (ValueError, TypeError):
                         # If conversion fails, use default value
+                        # TODO: alert here if an unexpected value is encountered
                         if is_nullable:
                             processed_record[field_name] = None
                         else:
@@ -193,63 +194,3 @@ class PyArrowTableManagerAdvSol:
         """
         pa.parquet.write_table(table, filepath)
         return filepath
-    
-    @staticmethod
-    def read_parquet_adv_sol(filepath: str) -> pa.Table:
-        """
-        Read a parquet file into a PyArrow table.
-        """
-        return pa.parquet.read_table(filepath)
-    
-    @staticmethod
-    def read_multiple_parquet_adv_sol(filepaths: List[str]) -> pa.Table:
-        """
-        Read multiple parquet files and combine them into a single PyArrow table.
-        """
-        if not filepaths:
-            return pa.table([], schema=NEO_SCHEMA_ADV_SOL)
-        
-        tables = []
-        for filepath in filepaths:
-            try:
-                table = pa.parquet.read_table(filepath)
-                tables.append(table)
-            except Exception as e:
-                print(f"Warning: Could not read {filepath}: {e}")
-                continue
-        
-        if not tables:
-            return pa.table([], schema=NEO_SCHEMA_ADV_SOL)
-        
-        # Combine all tables
-        return pa.concat_tables(tables)
-    
-    @staticmethod
-    def filter_table_adv_sol(table: pa.Table, column: str, value: Any) -> pa.Table:
-        """
-        Filter a PyArrow table by column value.
-        """
-        # Create a boolean mask
-        mask = pa.compute.equal(table[column], value)
-        return pa.compute.filter(table, mask)
-    
-    @staticmethod
-    def group_by_adv_sol(table: pa.Table, group_column: str, agg_columns: List[str], agg_functions: List[str]) -> pa.Table:
-        """
-        Group a PyArrow table by a column and apply aggregation functions.
-        """
-        # This is a simplified implementation - PyArrow's groupby is more complex
-        # For now, we'll return the original table and handle aggregations differently
-        return table
-    
-    @staticmethod
-    def get_table_info_adv_sol(table: pa.Table) -> Dict[str, Any]:
-        """
-        Get information about a PyArrow table.
-        """
-        return {
-            'num_rows': len(table),
-            'num_columns': len(table.schema),
-            'column_names': table.column_names,
-            'schema': str(table.schema)
-        }
