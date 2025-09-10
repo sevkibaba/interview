@@ -17,5 +17,4 @@ data/simple-solution/output/*
 data/advanced-solution/output/*
 
 .venv/
-*/IMPLEMENTATION_SUMMARY.md
 data/services/__pycache__/

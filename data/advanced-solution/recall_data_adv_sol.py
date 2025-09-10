@@ -21,6 +21,8 @@ load_dotenv()
 
 # Add the services directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'models'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from neo_api_service import NasaNeoClient
 from writer_service_adv_sol import NeoDataWriterAdvSol

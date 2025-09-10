@@ -18,7 +18,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'models'))
 
-from data.models.models import (
+from models import (
     NeoDataAdvSol, 
     PyArrowTableManagerAdvSol
 )
