@@ -91,13 +91,20 @@ def read_neo_data(spark, input_dir, start_batch, end_batch):
         current_partition += 20
     
     logger.info(f"Reading from partition paths: {partition_paths}")
+    logger.info(f"Total partitions to read: {len(partition_paths)}")
     
     # Read only the specific parquet files
     df = spark.read \
         .schema(define_neo_schema()) \
         .parquet(*partition_paths)
     
-    logger.info(f"Read {df.count()} records from parquet files")
+    total_records = df.count()
+    logger.info(f"Read {total_records} records from parquet files")
+    
+    # Log partition information for distribution analysis
+    logger.info(f"DataFrame partitions: {df.rdd.getNumPartitions()}")
+    logger.info(f"DataFrame schema: {df.schema}")
+    
     return df
 
 
@@ -108,6 +115,7 @@ def calculate_aggregations(df, spark):
     2. Number of close approaches by year
     """
     logger.info("Calculating aggregations")
+    logger.info(f"Input DataFrame has {df.rdd.getNumPartitions()} partitions")
     
     # Parse JSON and explode close approach data
     from pyspark.sql.functions import from_json, explode, col, year, split, regexp_extract
@@ -132,17 +140,24 @@ def calculate_aggregations(df, spark):
     ]))
     
     # Parse JSON and explode close approach data
+    logger.info("Parsing and exploding close approach data...")
     df_with_approaches = df.filter(col("close_approach_data").isNotNull()) \
         .withColumn("close_approach_parsed", from_json(col("close_approach_data"), close_approach_schema)) \
         .withColumn("approach", explode(col("close_approach_parsed"))) \
         .drop("close_approach_data", "close_approach_parsed")
     
+    logger.info(f"Exploded DataFrame has {df_with_approaches.rdd.getNumPartitions()} partitions")
+    
     # Filter for close approaches under 0.2 AU
+    logger.info("Filtering for close approaches under 0.2 AU...")
     df_close_approaches = df_with_approaches \
         .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2)
     
+    logger.info(f"Filtered DataFrame has {df_close_approaches.rdd.getNumPartitions()} partitions")
+    
     # 1. Total number of close approaches under 0.2 AU
     total_close_approaches = df_close_approaches.count()
+    logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
     
     # 2. Extract year and count by year
     df_with_year = df_close_approaches \
@@ -186,7 +201,8 @@ def write_aggregations(aggregations_df, output_dir, start_batch, end_batch):
     # Create output path with batch range
     batch_range = f"batches-{start_batch}-{end_batch}"
     output_path = f"{output_dir}/aggregations/{batch_range}"
-    
+
+    # used coalesce for simplicity, not production code.
     aggregations_df.coalesce(1).write \
         .mode("overwrite") \
         .option("parquet.enable.summary-metadata", "false") \

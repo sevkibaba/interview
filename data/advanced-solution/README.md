@@ -32,6 +32,12 @@ The advanced solution consists of several key components:
    - Easy deployment and scaling
    - Parameterized job execution
 
+ ****6. **Spark Cluster** (Production-like)
+   - Multi-worker Spark cluster setup
+   - Distributed task processing
+   - Real-time monitoring and debugging
+   - Load balancing across workers
+
 ## Features
 
 ### PyArrow Integration
@@ -50,6 +56,13 @@ The advanced solution consists of several key components:
 - **Docker Support**: Easy deployment and environment consistency
 - **Parameterized Jobs**: Flexible batch processing with command-line arguments
 - **Volume Mounting**: Persistent data storage
+
+### Spark Cluster
+- **Distributed Processing**: True parallel processing across multiple workers
+- **Load Balancing**: Automatic task distribution for optimal resource utilization
+- **Fault Tolerance**: Built-in error handling and task reassignment
+- **Real-time Monitoring**: Web UIs for cluster and job monitoring
+- **Scalability**: Easy to add more workers for increased processing power
 
 ## Installation
 
@@ -98,7 +111,53 @@ python advanced-solution/recall_data_adv_sol.py --backfill 1 100 --output-dir ./
 
 ### 2. Spark Aggregation Job
 
-#### Using Docker (Recommended)
+#### Using Spark Cluster (Production-like) - Recommended
+
+For production-like distributed processing with multiple workers:
+
+```bash
+# Navigate to the data directory
+cd ../data
+
+# Start the Spark cluster
+docker-compose -f docker-compose-cluster.yml up -d
+
+# Check cluster status
+docker-compose -f docker-compose-cluster.yml ps
+
+# Submit job to the cluster using the helper script
+./submit_spark_job.sh 1 200
+
+# Or submit manually
+docker-compose -f docker-compose-cluster.yml exec spark-submit spark-submit \
+    --master spark://spark-master:7077 \
+    --py-files /app/models/models.py,/app/services/writer_service_adv_sol.py \
+    /app/spark_aggregation_job.py \
+    --start_batch 1 --end_batch 200 \
+    --input_dir /data --output_dir /data
+
+# Monitor the cluster
+# - Spark Master Web UI: http://localhost:8080
+# - Worker 1 Web UI: http://localhost:8081
+# - Worker 2 Web UI: http://localhost:8082
+
+# Stop the cluster when done
+docker-compose -f docker-compose-cluster.yml down
+```
+
+**Cluster Architecture:**
+- **1 Spark Master** (port 8080) - Job scheduling and cluster coordination
+- **2 Spark Workers** (ports 8081, 8082) - Each with 2 cores and 2GB RAM
+- **Job Submission Service** - For submitting Spark jobs to the cluster
+
+**Benefits of Cluster Mode:**
+- **True Parallelism**: Tasks distributed across multiple workers
+- **Load Balancing**: Automatic task distribution for optimal performance
+- **Fault Tolerance**: If one worker fails, tasks are reassigned
+- **Real-time Monitoring**: Web UIs show task distribution and performance
+- **Scalability**: Easy to add more workers by extending docker-compose
+
+#### Using Docker (Single Container)
 ```bash
 # Navigate to the data directory
 cd ../data
@@ -196,7 +255,10 @@ data/
 │   └── writer_service_adv_sol.py   # PyArrow-based writer service
 ├── requirements.txt                  # Python dependencies
 ├── Dockerfile                        # Docker image definition
-└── docker-compose.yml               # Multi-service orchestration
+├── docker-compose.yml               # Multi-service orchestration
+├── docker-compose-cluster.yml       # Spark cluster setup
+├── submit_spark_job.sh              # Helper script for cluster job submission
+└── SPARK_CLUSTER_README.md          # Detailed cluster documentation
 ```
 
 ## Output Structure
@@ -235,10 +297,20 @@ output/
 - **Fault tolerance** with automatic retry
 
 ### Expected Performance
+
+#### Single Container Mode
 - **Data Fetching**: ~5-10 seconds for 200 NEOs
 - **PyArrow Processing**: ~1-2 seconds for transformations
 - **Spark Aggregations**: ~2-5 seconds for 200 NEOs
 - **Memory Usage**: ~100-200 MB peak during processing
+
+#### Spark Cluster Mode
+- **Data Fetching**: ~5-10 seconds for 200 NEOs
+- **PyArrow Processing**: ~1-2 seconds for transformations
+- **Spark Aggregations**: ~1-3 seconds for 200 NEOs (distributed across workers)
+- **Memory Usage**: ~200-400 MB total across cluster
+- **Task Distribution**: 4 partitions across 2 workers (2 tasks per worker)
+- **Parallelism**: True parallel processing with load balancing
 
 ## Troubleshooting
 
@@ -258,6 +330,32 @@ output/
    
    # Verify input data exists
    ls -la ./output/raw/
+   ```
+
+3. **Spark Cluster Issues**
+   ```bash
+   # Check cluster status
+   docker-compose -f docker-compose-cluster.yml ps
+   
+   # Check worker logs
+   docker-compose -f docker-compose-cluster.yml logs spark-worker-1
+   docker-compose -f docker-compose-cluster.yml logs spark-worker-2
+   
+   # Check master logs
+   docker-compose -f docker-compose-cluster.yml logs spark-master
+   
+   # Restart cluster if needed
+   docker-compose -f docker-compose-cluster.yml down
+   docker-compose -f docker-compose-cluster.yml up -d
+   ```
+
+4. **Task Distribution Issues**
+   ```bash
+   # Check if workers are registered
+   # Visit http://localhost:8080 and check "Workers" tab
+   
+   # Verify task distribution in logs
+   # Look for "Starting task X.Y in stage Z.W (TID N) (spark-worker-X, executor Y)"
    ```
 
 ### Debug Mode
