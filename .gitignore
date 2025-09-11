@@ -21,3 +21,4 @@ data/advanced-solution/output/*
 **/__pycache__/
 data/tests/test_data/*
 data/tests/test_output/*
+**/output/

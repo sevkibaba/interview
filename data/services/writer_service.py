@@ -13,6 +13,7 @@ from error_handling import (
     safe_float, safe_int, safe_bool, log_and_continue, ErrorSeverity
 )
 from retry_utils import retry_file_operation
+from config import config
 
 logger = logging.getLogger("tekmetric")
 
@@ -22,10 +23,10 @@ class NeoDataWriter:
     Service to write NEO data to parquet files and handle aggregations.
     """
 
-    def __init__(self, output_dir: str = "output"):
-        self.output_dir = output_dir
-        self.raw_dir = os.path.join(output_dir, "raw")
-        self.aggregations_dir = os.path.join(output_dir, "aggregations")
+    def __init__(self, output_dir: Optional[str] = None):
+        self.output_dir = output_dir or config.OUTPUT_DIR
+        self.raw_dir = config.get_raw_data_dir()
+        self.aggregations_dir = config.get_aggregations_dir()
         
         # Create directories if they don't exist
         os.makedirs(self.raw_dir, exist_ok=True)
@@ -91,12 +92,12 @@ class NeoDataWriter:
         """
         Update aggregation counters based on NEO data.
         """
-        # Count close approaches (< 0.2 AU)
+        # Count close approaches (< configured threshold AU)
         if 'close_approach_data' in neo and neo['close_approach_data']:
             for approach in neo['close_approach_data']:
                 try:
                     miss_distance_au = approach.get('miss_distance', {}).get('astronomical')
-                    if miss_distance_au and safe_float(miss_distance_au, 'miss_distance_au') and safe_float(miss_distance_au, 'miss_distance_au') < 0.2:
+                    if miss_distance_au and safe_float(miss_distance_au, 'miss_distance_au') and safe_float(miss_distance_au, 'miss_distance_au') < config.CLOSE_APPROACH_THRESHOLD_AU:
                         self.close_approaches_count += 1
                         
                         # Count by year
@@ -140,12 +141,12 @@ class NeoDataWriter:
         # Create DataFrame
         df = pd.DataFrame(transformed_data)
         
-        # Calculate partition range (20 NEOs per partition)
-        partition_start = ((batch_number - 1) % 20) * 20 + 1
-        partition_end = partition_start + 19
+        # Calculate partition range (configurable NEOs per partition)
+        partition_start = ((batch_number - 1) % config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
+        partition_end = partition_start + config.PARTITION_SIZE - 1
         
         # Create partition directory
-        partition_dir = f"batch-number={partition_start}-{partition_end}"
+        partition_dir = config.get_partition_dir_name(partition_start, partition_end)
         partition_path = os.path.join(self.raw_dir, partition_dir)
         
         try:
@@ -155,7 +156,7 @@ class NeoDataWriter:
                                    partition_path, e)
         
         # Write to parquet with partition info in filename
-        filename = f"neo_partition_{partition_start}-{partition_end}.parquet"
+        filename = config.get_parquet_filename(partition_start, partition_end)
         filepath = os.path.join(partition_path, filename)
         
         # Use retry logic for file writing
@@ -183,25 +184,28 @@ class NeoDataWriter:
         logger.info(f"Backfilling batch {batch_number}")
         return self.write_batch(neos, batch_number, update_aggregations=False)
     
-    def read_raw_files(self, start_batch: int = 1, end_batch: int = 200) -> pd.DataFrame:
+    def read_raw_files(self, start_batch: int = 1, end_batch: Optional[int] = None) -> pd.DataFrame:
         """
         Read raw parquet files from the specified batch range.
         :param start_batch: Starting batch number
-        :param end_batch: Ending batch number
+        :param end_batch: Ending batch number (uses config if None)
         :return: Combined DataFrame of all raw data
         """
+        if end_batch is None:
+            end_batch = config.TOTAL_NEO_LIMIT // config.BATCH_SIZE
+            
         all_dataframes = []
         
         # Calculate which partitions we need to read
-        start_partition = ((start_batch - 1) // 20) * 20 + 1
-        end_partition = ((end_batch - 1) // 20) * 20 + 1
+        start_partition = ((start_batch - 1) // config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
+        end_partition = ((end_batch - 1) // config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
         
         logger.info(f"Reading raw files from batch {start_batch} to {end_batch}")
         logger.info(f"Will read partitions from {start_partition} to {end_partition}")
         
-        for partition_start in range(start_partition, end_partition + 1, 20):
-            partition_end = partition_start + 19
-            partition_dir = f"batch-number={partition_start}-{partition_end}"
+        for partition_start in range(start_partition, end_partition + 1, config.PARTITION_SIZE):
+            partition_end = partition_start + config.PARTITION_SIZE - 1
+            partition_dir = config.get_partition_dir_name(partition_start, partition_end)
             partition_path = os.path.join(self.raw_dir, partition_dir)
             
             if os.path.exists(partition_path):
@@ -278,7 +282,7 @@ class NeoDataWriter:
         
         # Write close approaches aggregations
         close_approaches_df = pd.DataFrame(close_approaches_data)
-        close_approaches_file = os.path.join(self.aggregations_dir, "close_approaches_aggregations.parquet")
+        close_approaches_file = config.get_aggregations_filepath()
         close_approaches_df.to_parquet(close_approaches_file, index=False)
         
         logger.info(f"Written aggregations to {close_approaches_file}")

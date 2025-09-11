@@ -30,11 +30,12 @@ from error_handling import (
     handle_errors, APIError, DataProcessingError, FileOperationError,
     log_and_continue, ErrorSeverity
 )
+from config import config
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, config.LOG_LEVEL.upper()),
+    format=config.LOG_FORMAT
 )
 logger = logging.getLogger("tekmetric")
 
@@ -50,7 +51,7 @@ def backfill_batch_range(start_batch: int, end_batch: int, output_dir: str):
     neo_client = NasaNeoClient()
     data_writer = NeoDataWriter(output_dir)
     
-    batch_size = 20
+    batch_size = config.BATCH_SIZE
     successful_batches = 0
     failed_batches = 0
     
@@ -140,8 +141,8 @@ def full_run(output_dir: str):
     logger.info("Starting full NASA NEO data recall process")
     
     # Configuration
-    total_limit = 200
-    batch_size = 20
+    total_limit = config.TOTAL_NEO_LIMIT
+    batch_size = config.BATCH_SIZE
     
     try:
         # Initialize services
@@ -197,8 +198,8 @@ def main():
                        help='Backfill batches from START to END (e.g., --backfill 1 20)')
     parser.add_argument('--recalc', nargs=2, type=int, metavar=('START', 'END'), 
                        help='Recalculate aggregations from START to END batch numbers')
-    parser.add_argument('--output-dir', default=os.getenv("OUTPUT_DIR", "output"),
-                       help='Output directory (default: output)')
+    parser.add_argument('--output-dir', default=config.OUTPUT_DIR,
+                       help=f'Output directory (default: {config.OUTPUT_DIR})')
     
     args = parser.parse_args()
     

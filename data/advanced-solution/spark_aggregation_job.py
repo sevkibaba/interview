@@ -18,16 +18,17 @@ from pyspark.sql.functions import col, year, when, count, sum as spark_sum
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
 
 # Add utils to path for error handling
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
-from utils.error_handling import (
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+from error_handling import (
     handle_errors, DataProcessingError, FileOperationError,
     log_and_continue, ErrorSeverity
 )
+from config import config
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, config.LOG_LEVEL.upper()),
+    format=config.LOG_FORMAT
 )
 logger = logging.getLogger("neo_aggregation_job")
 
@@ -39,9 +40,10 @@ def create_spark_session():
     """
     try:
         return SparkSession.builder \
-            .appName("NEO Aggregation Job") \
-            .config("spark.sql.adaptive.enabled", "true") \
-            .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+            .appName(config.SPARK_APP_NAME) \
+            .master(config.SPARK_MASTER) \
+            .config("spark.sql.adaptive.enabled", str(config.SPARK_SQL_ADAPTIVE_ENABLED).lower()) \
+            .config("spark.sql.adaptive.coalescePartitions.enabled", str(config.SPARK_SQL_ADAPTIVE_COALESCE_ENABLED).lower()) \
             .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
             .config("spark.hadoop.parquet.enable.summary-metadata", "false") \
             .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem") \
@@ -88,22 +90,22 @@ def read_neo_data(spark, input_dir, start_batch, end_batch):
     logger.info(f"Reading NEO data from {input_dir} for batches {start_batch} to {end_batch}")
     
     # Calculate partition ranges
-    start_partition = ((start_batch - 1) // 20) * 20 + 1
-    end_partition = ((end_batch - 1) // 20) * 20 + 1
+    start_partition = ((start_batch - 1) // config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
+    end_partition = ((end_batch - 1) // config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
     
     logger.info(f"Reading partitions from {start_partition} to {end_partition}")
     
     # Build the path pattern for reading specific partitions
-    raw_data_path = f"{input_dir}/raw"
+    raw_data_path = f"{input_dir}/{config.RAW_DATA_DIR}"
     
     # Generate specific partition paths based on batch range
     partition_paths = []
     current_partition = start_partition
     while current_partition <= end_partition:
-        partition_dir = f"batch-number={current_partition}-{current_partition + 19}"
+        partition_dir = config.get_partition_dir_name(current_partition, current_partition + config.PARTITION_SIZE - 1)
         partition_path = f"{raw_data_path}/{partition_dir}/*.parquet"
         partition_paths.append(partition_path)
-        current_partition += 20
+        current_partition += config.PARTITION_SIZE
     
     logger.info(f"Reading from partition paths: {partition_paths}")
     logger.info(f"Total partitions to read: {len(partition_paths)}")
@@ -169,16 +171,16 @@ def calculate_aggregations(df, spark):
         
         logger.info(f"Exploded DataFrame has {df_with_approaches.rdd.getNumPartitions()} partitions")
         
-        # Filter for close approaches under 0.2 AU
-        logger.info("Filtering for close approaches under 0.2 AU...")
+        # Filter for close approaches under configured threshold AU
+        logger.info(f"Filtering for close approaches under {config.CLOSE_APPROACH_THRESHOLD_AU} AU...")
         df_close_approaches = df_with_approaches \
-            .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2)
+            .filter(col("approach.miss_distance.astronomical").cast("double") < config.CLOSE_APPROACH_THRESHOLD_AU)
         
         logger.info(f"Filtered DataFrame has {df_close_approaches.rdd.getNumPartitions()} partitions")
         
-        # 1. Total number of close approaches under 0.2 AU
+        # 1. Total number of close approaches under configured threshold AU
         total_close_approaches = df_close_approaches.count()
-        logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
+        logger.info(f"Total close approaches under {config.CLOSE_APPROACH_THRESHOLD_AU} AU: {total_close_approaches}")
         
         # 2. Extract year and count by year
         df_with_year = df_close_approaches \
@@ -227,14 +229,14 @@ def write_aggregations(aggregations_df, output_dir, start_batch, end_batch):
     try:
         # Create output path with batch range
         batch_range = f"batches-{start_batch}-{end_batch}"
-        output_path = f"{output_dir}/aggregations/{batch_range}"
+        output_path = f"{output_dir}/{config.AGGREGATIONS_DIR}/{batch_range}"
 
         # used coalesce for simplicity, not production code.
         aggregations_df.coalesce(1).write \
             .mode("overwrite") \
             .option("parquet.enable.summary-metadata", "false") \
             .option("parquet.enable.dictionary", "false") \
-            .option("parquet.block.size", "134217728") \
+            .option("parquet.block.size", str(config.SPARK_PARQUET_BLOCK_SIZE)) \
             .option("mapreduce.fileoutputcommitter.algorithm.version", "2") \
             .option("mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
             .parquet(output_path)

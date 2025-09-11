@@ -14,6 +14,7 @@ from error_handling import (
     handle_api_response, log_and_continue, ErrorSeverity
 )
 from retry_utils import retry_api_call, RetryConfig
+from config import config
 
 logger = logging.getLogger("tekmetric")
 
@@ -23,15 +24,12 @@ class NasaNeoClient:
     A client for the NASA Near Earth Object API.
     """
 
-    BASE_URL = "https://api.nasa.gov"
-    DEMO_KEY = "DEMO_KEY"
-
-    def __init__(self, url: str = BASE_URL, api_key: str = DEMO_KEY):
-        self._url = url
-        self._api_key = os.environ.get("API_KEY", api_key)
+    def __init__(self, url: Optional[str] = None, api_key: Optional[str] = None):
+        self._url = url or config.NASA_API_BASE_URL
+        self._api_key = api_key or os.environ.get("API_KEY", config.NASA_API_DEMO_KEY)
         self._session = requests.Session()
         self._last_request_time = 0
-        self._min_request_interval = 0.5  # 2 requests per second max
+        self._min_request_interval = config.API_RATE_LIMIT_INTERVAL
 
     def __del__(self):
         """
@@ -41,7 +39,7 @@ class NasaNeoClient:
 
     def _rate_limit(self):
         """
-        Simple rate limiting to ensure max 2 requests per second.
+        Simple rate limiting to ensure max requests per second as configured.
         """
         current_time = time.time()
         time_since_last = current_time - self._last_request_time
@@ -78,14 +76,17 @@ class NasaNeoClient:
         return response.json()
 
     @handle_errors("neo_api", ErrorSeverity.HIGH)
-    def fetch_neo_batch(self, page: int = 0, size: int = 20) -> Dict[str, Any]:
+    def fetch_neo_batch(self, page: int = 0, size: Optional[int] = None) -> Dict[str, Any]:
         """
         Fetch a batch of Near Earth Objects from the Browse API.
         :param page: Page number (0-based)
-        :param size: Number of objects per page (max 20)
+        :param size: Number of objects per page (uses config if None)
         :return: Dictionary containing the API response
         """
-        endpoint = "/neo/rest/v1/neo/browse"
+        if size is None:
+            size = config.BATCH_SIZE
+            
+        endpoint = config.NASA_API_ENDPOINT
         params = {
             "page": page,
             "size": min(size, 20)  # API limit is 20 per page
@@ -96,13 +97,18 @@ class NasaNeoClient:
         return handle_api_response(response, endpoint)
 
     @handle_errors("neo_api", ErrorSeverity.HIGH)
-    def fetch_all_neos(self, total_limit: int = 200, batch_size: int = 20) -> List[Dict[str, Any]]:
+    def fetch_all_neos(self, total_limit: Optional[int] = None, batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Fetch all Near Earth Objects up to the specified limit using batching.
-        :param total_limit: Maximum number of NEOs to fetch
-        :param batch_size: Number of objects per batch (max 20)
+        :param total_limit: Maximum number of NEOs to fetch (uses config if None)
+        :param batch_size: Number of objects per batch (uses config if None)
         :return: List of NEO objects
         """
+        if total_limit is None:
+            total_limit = config.TOTAL_NEO_LIMIT
+        if batch_size is None:
+            batch_size = config.BATCH_SIZE
+            
         all_neos = []
         page = 0
         batch_size = min(batch_size, 20)  # API limit

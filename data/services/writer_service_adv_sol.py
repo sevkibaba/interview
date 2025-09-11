@@ -27,6 +27,7 @@ from error_handling import (
     handle_errors, DataValidationError, FileOperationError, DataProcessingError,
     safe_float, safe_int, safe_bool, log_and_continue, ErrorSeverity
 )
+from config import config
 
 logger = logging.getLogger("tekmetric")
 
@@ -35,9 +36,9 @@ class NeoDataWriterAdvSol:
     """
     Advanced solution service to write NEO data to parquet files using PyArrow.
     """
-    def __init__(self, output_dir: str = "output"):
-        self.output_dir = output_dir
-        self.raw_dir = os.path.join(output_dir, "raw")
+    def __init__(self, output_dir: Optional[str] = None):
+        self.output_dir = output_dir or config.OUTPUT_DIR
+        self.raw_dir = config.get_raw_data_dir()
         
         # Create directories if they don't exist
         os.makedirs(self.raw_dir, exist_ok=True)
@@ -124,12 +125,12 @@ class NeoDataWriterAdvSol:
         # Create PyArrow table
         table = PyArrowTableManagerAdvSol.create_neo_table_adv_sol(transformed_data)
         
-        # Calculate partition range (20 batches per partition) - same as simple solution
-        partition_start = ((batch_number - 1) % 20) * 20 + 1
-        partition_end = partition_start + 19
+        # Calculate partition range (configurable batches per partition)
+        partition_start = ((batch_number - 1) % config.PARTITION_SIZE) * config.PARTITION_SIZE + 1
+        partition_end = partition_start + config.PARTITION_SIZE - 1
         
         # Create partition directory
-        partition_dir = f"batch-number={partition_start}-{partition_end}"
+        partition_dir = config.get_partition_dir_name(partition_start, partition_end)
         partition_path = os.path.join(self.raw_dir, partition_dir)
         
         try:
@@ -139,7 +140,7 @@ class NeoDataWriterAdvSol:
                                    partition_path, e)
         
         # Write to parquet with batch info in filename
-        filename = f"neo_partition_{partition_start}-{partition_end}.parquet"
+        filename = config.get_parquet_filename(partition_start, partition_end)
         filepath = os.path.join(partition_path, filename)
         
         try:

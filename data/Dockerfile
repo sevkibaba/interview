@@ -17,6 +17,7 @@ COPY advanced-solution/spark_aggregation_job.py .
 COPY models/models.py ./models/
 COPY services/writer_service_adv_sol.py ./services/
 COPY utils/error_handling.py ./utils/
+COPY utils/config.py ./utils/
 
 # Create directories for input and output
 RUN mkdir -p /app/input /app/output

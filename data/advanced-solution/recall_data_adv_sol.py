@@ -22,15 +22,16 @@ load_dotenv()
 # Add the services directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'models'))
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
 from neo_api_service import NasaNeoClient
 from writer_service_adv_sol import NeoDataWriterAdvSol
+from config import config
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, config.LOG_LEVEL.upper()),
+    format=config.LOG_FORMAT
 )
 logger = logging.getLogger("tekmetric")
 
@@ -46,7 +47,7 @@ def backfill_batch_range_adv_sol(start_batch: int, end_batch: int, output_dir: s
         neo_client = NasaNeoClient()
         data_writer = NeoDataWriterAdvSol(output_dir)
         
-        batch_size = 20
+        batch_size = config.BATCH_SIZE
         successful_batches = 0
         failed_batches = 0
         
@@ -114,9 +115,8 @@ def full_run_adv_sol(output_dir: str):
     logger.info("Starting full NASA NEO data recall process (Advanced Solution)")
     
     # Configuration
-    total_limit = 200
-
-    batch_size = 20
+    total_limit = config.TOTAL_NEO_LIMIT
+    batch_size = config.BATCH_SIZE
     
     try:
         # Initialize services
@@ -167,8 +167,8 @@ def main():
     parser = argparse.ArgumentParser(description='NASA NEO Data Recaller (Advanced Solution with PyArrow)')
     parser.add_argument('--backfill', nargs=2, type=int, metavar=('START', 'END'), 
                        help='Backfill batches from START to END (e.g., --backfill 1 20)')
-    parser.add_argument('--output-dir', default=os.getenv("OUTPUT_DIR", "output"),
-                       help='Output directory (default: output)')
+    parser.add_argument('--output-dir', default=config.OUTPUT_DIR,
+                       help=f'Output directory (default: {config.OUTPUT_DIR})')
     
     args = parser.parse_args()
     
