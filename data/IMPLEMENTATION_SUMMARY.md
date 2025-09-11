@@ -292,13 +292,27 @@ python3 test_spark_pipeline.py
 The test suite ensures that both solutions work correctly and can be used as a foundation for additional testing in a production environment.
 
 ### Additional Notes
-- The raw data should be recorded in Avro for a longer term operation since it is easy change schema and has high throughput rate than parquet files. It is easier to debug the data and easier to have partial backfills with a clever partitioning design.
-- In addition to record raw data and having api requests in another module, it is a better approach than having them all in a spark job. The machines used for spark jobs are expensive for an api-scrape operation, and the parallel executor architecture is not suitable for api scraping because it lacks the politeness in its nature. Moreover, it would be very expensive and complex to handles errors on the fly.
-- Recording raw data in its own place is better for future cases. The new report requirements could be built on top of that.
-- It would be better to have a rate limiter that also takes the api limits into account. Since there is a limit in the api requests in an hourly manner, tha api scraper part is not designed to scale more.
-- There should be an alerting system and another folder to record unexpected data after a validation step. It could be the case that the incoming data is mission-critical and needs to be handled properly.
-- There is a typo in the case explanation that the raw files should have kilometers in unit for the approach distance but the aggregations uses astronomical units. I decided to record the all `close_approach_data` since it is better the have all raw data in a place, for future report backfills and additional reporting requirements.  
-- In the advanced solution part, the raw files asked to have all rows exploded from the `close_approach_data`. This is not a best practice (see the previous item). We want to separate ingestion and computation pipes. It might seem cost-effective for this case or let's say a simpler case, but in a production environment, you want to explode them after ingesting the raw data using a different pipe. For this design, there would be another step like ingest raw data -> explode raw data -> compute aggregations. For the interview case, we combine the exploding and aggregation steps for simplicity. If there are other aggregations to be computed, we would separate them into different steps. 
-- There can be a presto (trino) like environment to query the data. This is not implemented in this solution. If the reporting requirements changes a lot, it would be better to have a presto like environment to query the data instead of calculating the results with Spark jobs. In this case there should be middle stages (Spark jobs) to decrease the data size for the query environment. 
-- The jobs can also be orchestrated with a tool like Airflow. This is not implemented in this solution.
-- Provided comprehensive tests for both solutions, including unit tests and integration tests. The test suite covers PyArrow writer service functionality and Spark aggregation job processing using the same Docker-based approach as the production pipeline.
+
+#### Data Storage and Processing Architecture
+- **Raw Data Format**: Raw data should be recorded in Avro format for long-term operations since it allows easy schema changes and has higher throughput than Parquet files. This makes debugging easier and enables partial backfills with clever partitioning design.
+- **Separation of Concerns**: Recording raw data and API requests in separate modules is better than combining them in a Spark job. Spark machines are expensive for API scraping operations, and the parallel executor architecture lacks the politeness required for API interactions. Moreover, it would be very expensive and complex to handle errors on the fly.
+- **Future-Proofing**: Recording raw data separately enables future report requirements to be built on top of the existing data foundation.
+- **Rate Limiting**: A more sophisticated rate limiter that considers API limits would be beneficial. Since there are hourly limits on API requests, the API scraper is not designed to scale beyond current capacity.
+
+#### Data Quality and Validation
+- **Data Validation**: No data validation for malformed API responses is currently implemented. Since this is mission-critical data, we don't accept errors and need to fix all data before calculating aggregations. This is currently a manual process.
+- **Alerting System**: An alerting system and dedicated folder for recording unexpected data after validation would be beneficial. Since incoming data is mission-critical, it needs to be handled properly.
+
+#### Data Processing Design Decisions
+- **Unit Consistency**: There is a discrepancy in the case explanation - raw files should have kilometers as the unit for approach distance, but aggregations use astronomical units. We decided to record all `close_approach_data` since it's better to have all raw data available for future report backfills and additional reporting requirements.
+- **Data Explosion Strategy**: In the advanced solution, raw files were asked to have all rows exploded from `close_approach_data`. This is not a best practice. We want to separate ingestion and computation pipelines. In a production environment, you would explode data after ingesting raw data using a different pipeline. The ideal design would be: ingest raw data → explode raw data → compute aggregations. For this interview case, we combined exploding and aggregation steps for simplicity. If there were other aggregations to compute, we would separate them into different steps.
+
+#### Missing Capabilities and Future Enhancements
+- **Incremental Processing**: No incremental processing capabilities are currently implemented. This can be added with domain knowledge to track the last processed batch and enable resumable operations.
+- **Abstraction Layer**: No interfaces or base classes for common functionality are implemented. This was done for simplicity and ease of reading for the interviewer.
+- **Error Scenario Testing**: No testing of failure conditions is currently implemented. This can be easily added to the existing test suite in the `tests/` folder.
+- **Query Environment**: A Presto (Trino) environment for querying data is not implemented. If reporting requirements change frequently, it would be better to have a Presto-like environment instead of calculating results with Spark jobs. In this case, there should be intermediate stages (Spark jobs) to reduce data size for the query environment.
+- **Orchestration**: Job orchestration with tools like Airflow is not implemented in this solution.
+
+#### Testing Infrastructure
+- **Comprehensive Test Suite**: The solution includes example tests for both simple and advanced approaches. The test suite covers PyArrow writer service functionality and Spark aggregation job processing using the same Docker-based approach as the production pipeline. On top of this structure, other tests would be easily implemented.
