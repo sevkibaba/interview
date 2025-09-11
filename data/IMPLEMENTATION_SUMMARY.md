@@ -56,6 +56,26 @@ Complete implementation of a NASA Near Earth Object (NEO) data recaller system t
 - Comprehensive logging for debugging
 - Summary statistics for successful vs failed operations
 
+#### Error Handling System (`utils/error_handling.py`)
+The solution includes a comprehensive error handling framework:
+
+- **Custom Exception Hierarchy**: 
+  - `DataProcessingError`: Base exception with severity levels (LOW, MEDIUM, HIGH, CRITICAL)
+  - `APIError`: For API-related errors with status code tracking
+  - `DataValidationError`: For data validation issues with field-specific context
+  - `FileOperationError`: For file I/O operations with file path tracking
+
+- **Error Handling Decorator**: `@handle_errors()` decorator provides consistent error handling across all components with configurable severity levels and re-raising behavior.
+
+- **Safe Type Conversion**: Utility functions (`safe_float()`, `safe_int()`, `safe_bool()`) for robust data type conversion with fallback values and logging.
+
+- **Validation Utilities**: 
+  - `validate_required_fields()`: Ensures required fields are present in data structures
+  - `handle_api_response()`: Validates API responses and raises appropriate exceptions
+  - `log_and_continue()`: For non-critical errors that don't stop execution
+
+- **Component-Specific Error Context**: All errors include component identification and original exception preservation for debugging.
+
 ### Aggregation Logic
 - Calculates close approaches under 0.2 AU
 - Tracks yearly breakdown of close approaches
@@ -287,7 +307,6 @@ python3 test_spark_pipeline.py
 - ✅ Output structure verification
 - ✅ Aggregation calculation accuracy
 - ✅ Yearly breakdown correctness
-- ✅ Error handling and edge cases
 
 The test suite ensures that both solutions work correctly and can be used as a foundation for additional testing in a production environment.
 

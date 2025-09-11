@@ -158,13 +158,6 @@ The script provides detailed logging including:
 
 Log level can be adjusted by modifying the logging configuration in the script.
 
-## Error Handling
-
-- **API Errors**: Graceful handling of API failures with retry logic
-- **File I/O**: Safe file operations with error reporting
-- **Data Validation**: Checks for required data fields
-- **Rate Limiting**: Automatic delays to respect API limits
-
 ## Performance
 
 - **Rate Limited**: Maximum 2 requests per second to NASA API

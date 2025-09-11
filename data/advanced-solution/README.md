@@ -197,24 +197,9 @@ docker-compose run neo-data-fetcher
 docker-compose run neo-full-pipeline
 ```
 
-#### Direct Spark Execution
-```bash
-# Run Spark job directly (requires Spark installation)
-spark-submit --master local[*] spark_aggregation_job.py \
-  --start_batch 1 \
-  --end_batch 200 \
-  --input_dir ./output \
-  --output_dir ./output
-```
-
 ### 3. Environment Variables
 
-Create a `.env` file in the project root:
-```bash
-API_KEY=your_nasa_api_key_here
-OUTPUT_DIR=./output
-LOG_LEVEL=INFO
-```
+Create a `.env` file in the project root see `.env_enxample` file.
 
 ## Data Schema
 
