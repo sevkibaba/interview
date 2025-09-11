@@ -22,9 +22,14 @@ load_dotenv()
 
 # Add the services directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'services'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
 
-from data.services.neo_api_service import NasaNeoClient
-from data.services.writer_service import NeoDataWriter
+from neo_api_service import NasaNeoClient
+from writer_service import NeoDataWriter
+from error_handling import (
+    handle_errors, APIError, DataProcessingError, FileOperationError,
+    log_and_continue, ErrorSeverity
+)
 
 # Configure logging
 logging.basicConfig(
@@ -34,75 +39,67 @@ logging.basicConfig(
 logger = logging.getLogger("tekmetric")
 
 
+@handle_errors("backfill", ErrorSeverity.HIGH)
 def backfill_batch_range(start_batch: int, end_batch: int, output_dir: str):
     """
     Backfill a range of batches.
     """
     logger.info(f"Starting backfill for batches {start_batch} to {end_batch}")
     
-    try:
-        # Initialize services
-        neo_client = NasaNeoClient()
-        data_writer = NeoDataWriter(output_dir)
+    # Initialize services
+    neo_client = NasaNeoClient()
+    data_writer = NeoDataWriter(output_dir)
+    
+    batch_size = 20
+    successful_batches = 0
+    failed_batches = 0
+    
+    # Loop through each batch in the range
+    for batch_number in range(start_batch, end_batch + 1):
+        logger.info(f"Processing batch {batch_number} of {end_batch}")
         
-        batch_size = 20
-        successful_batches = 0
-        failed_batches = 0
-        
-        # Loop through each batch in the range
-        for batch_number in range(start_batch, end_batch + 1):
-            logger.info(f"Processing batch {batch_number} of {end_batch}")
+        try:
+            # Calculate which NEOs to fetch for this batch
+            start_index = (batch_number - 1) * batch_size
+            end_index = start_index + batch_size
             
-            try:
-                # Calculate which NEOs to fetch for this batch
-                start_index = (batch_number - 1) * batch_size
-                end_index = start_index + batch_size
-                
-                # Fetch the specific batch
-                logger.info(f"Fetching NEOs {start_index + 1} to {end_index}")
-                response = neo_client.fetch_neo_batch(page=batch_number - 1, size=batch_size)
-                
-                if 'error' in response:
-                    logger.error(f"Error fetching batch {batch_number}: {response['error']}")
-                    failed_batches += 1
-                    continue
-                    
-                if 'near_earth_objects' not in response:
-                    logger.error(f"No NEOs found in batch {batch_number}")
-                    failed_batches += 1
-                    continue
-                    
-                neos = response['near_earth_objects']
-                if not neos:
-                    logger.error(f"No NEOs in batch {batch_number}")
-                    failed_batches += 1
-                    continue
-                
-                # Backfill the batch
-                filepath = data_writer.backfill_batch(neos, batch_number)
-                
-                if filepath:
-                    logger.info(f"Backfill complete for batch {batch_number}: {filepath}")
-                    successful_batches += 1
-                else:
-                    logger.error(f"Failed to write batch {batch_number}")
-                    failed_batches += 1
-                    
-            except Exception as e:
-                logger.error(f"Error processing batch {batch_number}: {e}")
+            # Fetch the specific batch
+            logger.info(f"Fetching NEOs {start_index + 1} to {end_index}")
+            response = neo_client.fetch_neo_batch(page=batch_number - 1, size=batch_size)
+            
+            neos = response.get('near_earth_objects', [])
+            if not neos:
+                logger.error(f"No NEOs in batch {batch_number}")
                 failed_batches += 1
-        
-        # Summary
-        logger.info("=== BACKFILL COMPLETE ===")
-        logger.info(f"Successful batches: {successful_batches}")
-        logger.info(f"Failed batches: {failed_batches}")
-        logger.info(f"Total batches processed: {successful_batches + failed_batches}")
-        
-        return 0 if failed_batches == 0 else 1
-        
-    except Exception as e:
-        logger.error(f"Error during backfill: {e}", exc_info=True)
-        return 1
+                continue
+            
+            # Backfill the batch
+            filepath = data_writer.backfill_batch(neos, batch_number)
+            
+            if filepath:
+                logger.info(f"Backfill complete for batch {batch_number}: {filepath}")
+                successful_batches += 1
+            else:
+                logger.error(f"Failed to write batch {batch_number}")
+                failed_batches += 1
+                
+        except APIError as e:
+            logger.error(f"API error processing batch {batch_number}: {e.message}")
+            failed_batches += 1
+        except (DataProcessingError, FileOperationError) as e:
+            logger.error(f"Processing error for batch {batch_number}: {e.message}")
+            failed_batches += 1
+        except Exception as e:
+            log_and_continue(e, f"processing batch {batch_number}", ErrorSeverity.MEDIUM)
+            failed_batches += 1
+    
+    # Summary
+    logger.info("=== BACKFILL COMPLETE ===")
+    logger.info(f"Successful batches: {successful_batches}")
+    logger.info(f"Failed batches: {failed_batches}")
+    logger.info(f"Total batches processed: {successful_batches + failed_batches}")
+    
+    return 0 if failed_batches == 0 else 1
 
 
 def recalculate_aggregations(start_batch: int, end_batch: int, output_dir: str):

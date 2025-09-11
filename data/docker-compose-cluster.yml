@@ -21,6 +21,7 @@ services:
       - ./advanced-solution/spark_aggregation_job.py:/app/spark_aggregation_job.py
       - ./models:/app/models
       - ./services:/app/services
+      - ./utils:/app/utils
       - ./requirements.txt:/app/requirements.txt
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -52,6 +53,7 @@ services:
       - ./advanced-solution/spark_aggregation_job.py:/app/spark_aggregation_job.py
       - ./models:/app/models
       - ./services:/app/services
+      - ./utils:/app/utils
       - ./requirements.txt:/app/requirements.txt
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -85,6 +87,7 @@ services:
       - ./advanced-solution/spark_aggregation_job.py:/app/spark_aggregation_job.py
       - ./models:/app/models
       - ./services:/app/services
+      - ./utils:/app/utils
       - ./requirements.txt:/app/requirements.txt
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -106,6 +109,7 @@ services:
       - ./advanced-solution/spark_aggregation_job.py:/app/spark_aggregation_job.py
       - ./models:/app/models
       - ./services:/app/services
+      - ./utils:/app/utils
       - ./requirements.txt:/app/requirements.txt
     extra_hosts:
       - "host.docker.internal:host-gateway"

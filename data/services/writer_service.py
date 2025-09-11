@@ -5,6 +5,15 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import pandas as pd
 
+# Add utils to path for error handling
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+from error_handling import (
+    handle_errors, DataValidationError, FileOperationError, DataProcessingError,
+    safe_float, safe_int, safe_bool, log_and_continue, ErrorSeverity
+)
+from retry_utils import retry_file_operation
+
 logger = logging.getLogger("tekmetric")
 
 
@@ -47,27 +56,7 @@ class NeoDataWriter:
         # Extract orbital data
         orbital_data = neo.get('orbital_data', {})
         
-        # Handle data type conversions and None values (consistent with advanced solution)
-        def safe_float(value):
-            if value is None:
-                return None
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return None
-        
-        def safe_int(value):
-            if value is None:
-                return None
-            try:
-                return int(value)
-            except (ValueError, TypeError):
-                return None
-        
-        def safe_bool(value):
-            if value is None:
-                return None
-            return bool(value)
+        # Use standardized safe conversion functions
         
         return {
             'id': neo.get('id'),
@@ -76,12 +65,12 @@ class NeoDataWriter:
             'name_limited': neo.get('name_limited'),
             'designation': neo.get('designation'),
             'nasa_jpl_url': neo.get('nasa_jpl_url'),
-            'absolute_magnitude_h': safe_float(neo.get('absolute_magnitude_h')),
-            'is_potentially_hazardous_asteroid': safe_bool(neo.get('is_potentially_hazardous_asteroid')),
-            'minimum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_min')),
-            'maximum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_max')),
+            'absolute_magnitude_h': safe_float(neo.get('absolute_magnitude_h'), 'absolute_magnitude_h'),
+            'is_potentially_hazardous_asteroid': safe_bool(neo.get('is_potentially_hazardous_asteroid'), 'is_potentially_hazardous_asteroid'),
+            'minimum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_min'), 'minimum_estimated_diameter_meters'),
+            'maximum_estimated_diameter_meters': safe_float(meters_diameter.get('estimated_diameter_max'), 'maximum_estimated_diameter_meters'),
             'closest_approach_miss_distance_km': (
-                safe_float(closest_approach.get('miss_distance', {}).get('kilometers', 0)) 
+                safe_float(closest_approach.get('miss_distance', {}).get('kilometers', 0), 'closest_approach_miss_distance_km') 
                 if closest_approach else None
             ),
             'closest_approach_date': (
@@ -89,13 +78,13 @@ class NeoDataWriter:
                 if closest_approach else None
             ),
             'closest_approach_relative_velocity_km_per_sec': (
-                safe_float(closest_approach.get('relative_velocity', {}).get('kilometers_per_second', 0)) 
+                safe_float(closest_approach.get('relative_velocity', {}).get('kilometers_per_second', 0), 'closest_approach_relative_velocity_km_per_sec') 
                 if closest_approach else None
             ),
             'first_observation_date': orbital_data.get('first_observation_date'),
             'last_observation_date': orbital_data.get('last_observation_date'),
-            'observations_used': safe_int(orbital_data.get('observations_used')),
-            'orbital_period': safe_float(orbital_data.get('orbital_period'))
+            'observations_used': safe_int(orbital_data.get('observations_used'), 'observations_used'),
+            'orbital_period': safe_float(orbital_data.get('orbital_period'), 'orbital_period')
         }
     
     def _update_aggregations(self, neo: Dict[str, Any]):
@@ -107,7 +96,7 @@ class NeoDataWriter:
             for approach in neo['close_approach_data']:
                 try:
                     miss_distance_au = approach.get('miss_distance', {}).get('astronomical')
-                    if miss_distance_au and float(miss_distance_au) < 0.2:
+                    if miss_distance_au and safe_float(miss_distance_au, 'miss_distance_au') and safe_float(miss_distance_au, 'miss_distance_au') < 0.2:
                         self.close_approaches_count += 1
                         
                         # Count by year
@@ -116,9 +105,10 @@ class NeoDataWriter:
                             year = approach_date.split('-')[0]
                             self.close_approaches_by_year[year] = self.close_approaches_by_year.get(year, 0) + 1
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.warning(f"Error processing close approach data: {e}")
+                    log_and_continue(e, "processing close approach data", ErrorSeverity.LOW)
                     continue
     
+    @handle_errors("writer_service", ErrorSeverity.MEDIUM)
     def write_batch(self, neos: List[Dict[str, Any]], batch_number: int, update_aggregations: bool = True) -> str:
         """
         Write a batch of NEOs to a parquet file with partitioning.
@@ -134,10 +124,18 @@ class NeoDataWriter:
         # Transform data
         transformed_data = []
         for neo in neos:
-            transformed_neo = self._extract_neo_data(neo)
-            transformed_data.append(transformed_neo)
-            if update_aggregations:
-                self._update_aggregations(neo)
+            try:
+                transformed_neo = self._extract_neo_data(neo)
+                transformed_data.append(transformed_neo)
+                if update_aggregations:
+                    self._update_aggregations(neo)
+            except Exception as e:
+                log_and_continue(e, f"transforming NEO data for batch {batch_number}", ErrorSeverity.MEDIUM)
+                continue
+        
+        if not transformed_data:
+            raise DataProcessingError(f"No valid data to write for batch {batch_number}", 
+                                   ErrorSeverity.HIGH, "writer_service")
         
         # Create DataFrame
         df = pd.DataFrame(transformed_data)
@@ -149,15 +147,31 @@ class NeoDataWriter:
         # Create partition directory
         partition_dir = f"batch-number={partition_start}-{partition_end}"
         partition_path = os.path.join(self.raw_dir, partition_dir)
-        os.makedirs(partition_path, exist_ok=True)
+        
+        try:
+            os.makedirs(partition_path, exist_ok=True)
+        except OSError as e:
+            raise FileOperationError(f"Failed to create directory {partition_path}", 
+                                   partition_path, e)
         
         # Write to parquet with partition info in filename
         filename = f"neo_partition_{partition_start}-{partition_end}.parquet"
         filepath = os.path.join(partition_path, filename)
-        df.to_parquet(filepath, index=False)
+        
+        # Use retry logic for file writing
+        self._write_parquet_with_retry(df, filepath)
         
         logger.info(f"Written batch {batch_number} with {len(transformed_data)} NEOs to {filepath}")
         return filepath
+    
+    @retry_file_operation(max_retries=3)
+    def _write_parquet_with_retry(self, df, filepath: str):
+        """Write parquet file with retry logic."""
+        try:
+            df.to_parquet(filepath, index=False)
+        except Exception as e:
+            raise FileOperationError(f"Failed to write parquet file {filepath}", 
+                                   filepath, e)
     
     def backfill_batch(self, neos: List[Dict[str, Any]], batch_number: int) -> str:
         """
@@ -198,7 +212,7 @@ class NeoDataWriter:
                         all_dataframes.append(df)
                         logger.debug(f"Read {len(df)} records from {file_path}")
                     except Exception as e:
-                        logger.error(f"Error reading {file_path}: {e}")
+                        log_and_continue(e, f"reading {file_path}", ErrorSeverity.MEDIUM)
             else:
                 logger.warning(f"Partition directory not found: {partition_path}")
         

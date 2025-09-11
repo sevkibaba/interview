@@ -11,9 +11,18 @@ Usage:
 
 import argparse
 import logging
+import sys
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, year, when, count, sum as spark_sum
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, BooleanType
+
+# Add utils to path for error handling
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utils'))
+from utils.error_handling import (
+    handle_errors, DataProcessingError, FileOperationError,
+    log_and_continue, ErrorSeverity
+)
 
 # Configure logging
 logging.basicConfig(
@@ -23,21 +32,26 @@ logging.basicConfig(
 logger = logging.getLogger("neo_aggregation_job")
 
 
+@handle_errors("spark_session", ErrorSeverity.CRITICAL)
 def create_spark_session():
     """
     Create and configure Spark session.
     """
-    return SparkSession.builder \
-        .appName("NEO Aggregation Job") \
-        .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .config("spark.hadoop.parquet.enable.summary-metadata", "false") \
-        .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem") \
-        .config("spark.hadoop.fs.local.impl", "org.apache.hadoop.fs.LocalFileSystem") \
-        .config("spark.hadoop.fs.file.impl.disable.cache", "true") \
-        .config("spark.hadoop.fs.local.impl.disable.cache", "true") \
-        .getOrCreate()
+    try:
+        return SparkSession.builder \
+            .appName("NEO Aggregation Job") \
+            .config("spark.sql.adaptive.enabled", "true") \
+            .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
+            .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
+            .config("spark.hadoop.parquet.enable.summary-metadata", "false") \
+            .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem") \
+            .config("spark.hadoop.fs.local.impl", "org.apache.hadoop.fs.LocalFileSystem") \
+            .config("spark.hadoop.fs.file.impl.disable.cache", "true") \
+            .config("spark.hadoop.fs.local.impl.disable.cache", "true") \
+            .getOrCreate()
+    except Exception as e:
+        raise DataProcessingError(f"Failed to create Spark session: {str(e)}", 
+                                ErrorSeverity.CRITICAL, "spark_session", e)
 
 
 def define_neo_schema():
@@ -66,6 +80,7 @@ def define_neo_schema():
     ])
 
 
+@handle_errors("spark_reader", ErrorSeverity.HIGH)
 def read_neo_data(spark, input_dir, start_batch, end_batch):
     """
     Read NEO data from parquet files for the specified batch range.
@@ -93,21 +108,26 @@ def read_neo_data(spark, input_dir, start_batch, end_batch):
     logger.info(f"Reading from partition paths: {partition_paths}")
     logger.info(f"Total partitions to read: {len(partition_paths)}")
     
-    # Read only the specific parquet files
-    df = spark.read \
-        .schema(define_neo_schema()) \
-        .parquet(*partition_paths)
-    
-    total_records = df.count()
-    logger.info(f"Read {total_records} records from parquet files")
-    
-    # Log partition information for distribution analysis
-    logger.info(f"DataFrame partitions: {df.rdd.getNumPartitions()}")
-    logger.info(f"DataFrame schema: {df.schema}")
-    
-    return df
+    try:
+        # Read only the specific parquet files
+        df = spark.read \
+            .schema(define_neo_schema()) \
+            .parquet(*partition_paths)
+        
+        total_records = df.count()
+        logger.info(f"Read {total_records} records from parquet files")
+        
+        # Log partition information for distribution analysis
+        logger.info(f"DataFrame partitions: {df.rdd.getNumPartitions()}")
+        logger.info(f"DataFrame schema: {df.schema}")
+        
+        return df
+    except Exception as e:
+        raise FileOperationError(f"Failed to read parquet files from {input_dir}", 
+                               input_dir, e)
 
 
+@handle_errors("spark_aggregation", ErrorSeverity.HIGH)
 def calculate_aggregations(df, spark):
     """
     Calculate the required aggregations:
@@ -117,108 +137,119 @@ def calculate_aggregations(df, spark):
     logger.info("Calculating aggregations")
     logger.info(f"Input DataFrame has {df.rdd.getNumPartitions()} partitions")
     
-    # Parse JSON and explode close approach data
-    from pyspark.sql.functions import from_json, explode, col, year, split, regexp_extract
-    from pyspark.sql.types import ArrayType, StructType, StructField, StringType, DoubleType
-    
-    # Define schema for close approach data
-    close_approach_schema = ArrayType(StructType([
-        StructField("close_approach_date", StringType(), True),
-        StructField("epoch_date_close_approach", StringType(), True),
-        StructField("relative_velocity", StructType([
-            StructField("kilometers_per_second", StringType(), True),
-            StructField("kilometers_per_hour", StringType(), True),
-            StructField("miles_per_hour", StringType(), True)
-        ]), True),
-        StructField("miss_distance", StructType([
-            StructField("astronomical", StringType(), True),
-            StructField("lunar", StringType(), True),
-            StructField("kilometers", StringType(), True),
-            StructField("miles", StringType(), True)
-        ]), True),
-        StructField("orbiting_body", StringType(), True)
-    ]))
-    
-    # Parse JSON and explode close approach data
-    logger.info("Parsing and exploding close approach data...")
-    df_with_approaches = df.filter(col("close_approach_data").isNotNull()) \
-        .withColumn("close_approach_parsed", from_json(col("close_approach_data"), close_approach_schema)) \
-        .withColumn("approach", explode(col("close_approach_parsed"))) \
-        .drop("close_approach_data", "close_approach_parsed")
-    
-    logger.info(f"Exploded DataFrame has {df_with_approaches.rdd.getNumPartitions()} partitions")
-    
-    # Filter for close approaches under 0.2 AU
-    logger.info("Filtering for close approaches under 0.2 AU...")
-    df_close_approaches = df_with_approaches \
-        .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2)
-    
-    logger.info(f"Filtered DataFrame has {df_close_approaches.rdd.getNumPartitions()} partitions")
-    
-    # 1. Total number of close approaches under 0.2 AU
-    total_close_approaches = df_close_approaches.count()
-    logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
-    
-    # 2. Extract year and count by year
-    df_with_year = df_close_approaches \
-        .withColumn("approach_year", year(col("approach.close_approach_date")))
-    
-    # Count approaches by year
-    yearly_aggregations = df_with_year \
-        .filter(col("approach_year").isNotNull()) \
-        .groupBy("approach_year") \
-        .agg(count("*").alias("count")) \
-        .orderBy("approach_year")
-    
-    # Convert yearly data to the expected format
-    yearly_data = yearly_aggregations.collect()
-    
-    aggregations_data = [
-        ("total_close_approaches_under_02_au", total_close_approaches)
-    ]
-    
-    # Add yearly breakdowns
-    for row in yearly_data:
-        year_val = row["approach_year"]
-        count_val = row["count"]
-        aggregations_data.append((f"close_approaches_year_{year_val}", count_val))
-    
-    # Create final DataFrame
-    aggregations_df = spark.createDataFrame(aggregations_data, ["metric", "value"])
-    
-    logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
-    logger.info(f"Yearly breakdown: {len(yearly_data)} years with close approaches")
-    
-    return aggregations_df
+    try:
+        # Parse JSON and explode close approach data
+        from pyspark.sql.functions import from_json, explode, col, year, split, regexp_extract
+        from pyspark.sql.types import ArrayType, StructType, StructField, StringType, DoubleType
+        
+        # Define schema for close approach data
+        close_approach_schema = ArrayType(StructType([
+            StructField("close_approach_date", StringType(), True),
+            StructField("epoch_date_close_approach", StringType(), True),
+            StructField("relative_velocity", StructType([
+                StructField("kilometers_per_second", StringType(), True),
+                StructField("kilometers_per_hour", StringType(), True),
+                StructField("miles_per_hour", StringType(), True)
+            ]), True),
+            StructField("miss_distance", StructType([
+                StructField("astronomical", StringType(), True),
+                StructField("lunar", StringType(), True),
+                StructField("kilometers", StringType(), True),
+                StructField("miles", StringType(), True)
+            ]), True),
+            StructField("orbiting_body", StringType(), True)
+        ]))
+        
+        # Parse JSON and explode close approach data
+        logger.info("Parsing and exploding close approach data...")
+        df_with_approaches = df.filter(col("close_approach_data").isNotNull()) \
+            .withColumn("close_approach_parsed", from_json(col("close_approach_data"), close_approach_schema)) \
+            .withColumn("approach", explode(col("close_approach_parsed"))) \
+            .drop("close_approach_data", "close_approach_parsed")
+        
+        logger.info(f"Exploded DataFrame has {df_with_approaches.rdd.getNumPartitions()} partitions")
+        
+        # Filter for close approaches under 0.2 AU
+        logger.info("Filtering for close approaches under 0.2 AU...")
+        df_close_approaches = df_with_approaches \
+            .filter(col("approach.miss_distance.astronomical").cast("double") < 0.2)
+        
+        logger.info(f"Filtered DataFrame has {df_close_approaches.rdd.getNumPartitions()} partitions")
+        
+        # 1. Total number of close approaches under 0.2 AU
+        total_close_approaches = df_close_approaches.count()
+        logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
+        
+        # 2. Extract year and count by year
+        df_with_year = df_close_approaches \
+            .withColumn("approach_year", year(col("approach.close_approach_date")))
+        
+        # Count approaches by year
+        yearly_aggregations = df_with_year \
+            .filter(col("approach_year").isNotNull()) \
+            .groupBy("approach_year") \
+            .agg(count("*").alias("count")) \
+            .orderBy("approach_year")
+        
+        # Convert yearly data to the expected format
+        yearly_data = yearly_aggregations.collect()
+        
+        aggregations_data = [
+            ("total_close_approaches_under_02_au", total_close_approaches)
+        ]
+        
+        # Add yearly breakdowns
+        for row in yearly_data:
+            year_val = row["approach_year"]
+            count_val = row["count"]
+            aggregations_data.append((f"close_approaches_year_{year_val}", count_val))
+        
+        # Create final DataFrame
+        aggregations_df = spark.createDataFrame(aggregations_data, ["metric", "value"])
+        
+        logger.info(f"Total close approaches under 0.2 AU: {total_close_approaches}")
+        logger.info(f"Yearly breakdown: {len(yearly_data)} years with close approaches")
+        
+        return aggregations_df
+        
+    except Exception as e:
+        raise DataProcessingError(f"Failed to calculate aggregations: {str(e)}", 
+                                ErrorSeverity.HIGH, "spark_aggregation", e)
 
 
+@handle_errors("spark_writer", ErrorSeverity.HIGH)
 def write_aggregations(aggregations_df, output_dir, start_batch, end_batch):
     """
     Write aggregations to output directory with batch range in the path.
     """
     logger.info(f"Writing aggregations to {output_dir}")
     
-    # Create output path with batch range
-    batch_range = f"batches-{start_batch}-{end_batch}"
-    output_path = f"{output_dir}/aggregations/{batch_range}"
+    try:
+        # Create output path with batch range
+        batch_range = f"batches-{start_batch}-{end_batch}"
+        output_path = f"{output_dir}/aggregations/{batch_range}"
 
-    # used coalesce for simplicity, not production code.
-    aggregations_df.coalesce(1).write \
-        .mode("overwrite") \
-        .option("parquet.enable.summary-metadata", "false") \
-        .option("parquet.enable.dictionary", "false") \
-        .option("parquet.block.size", "134217728") \
-        .option("mapreduce.fileoutputcommitter.algorithm.version", "2") \
-        .option("mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
-        .parquet(output_path)
-    
-    logger.info(f"Aggregations written to {output_path}")
-    
-    # Show results
-    logger.info("Aggregation results:")
-    aggregations_df.show(truncate=False)
-    
-    return output_path
+        # used coalesce for simplicity, not production code.
+        aggregations_df.coalesce(1).write \
+            .mode("overwrite") \
+            .option("parquet.enable.summary-metadata", "false") \
+            .option("parquet.enable.dictionary", "false") \
+            .option("parquet.block.size", "134217728") \
+            .option("mapreduce.fileoutputcommitter.algorithm.version", "2") \
+            .option("mapreduce.fileoutputcommitter.cleanup-failures.ignored", "true") \
+            .parquet(output_path)
+        
+        logger.info(f"Aggregations written to {output_path}")
+        
+        # Show results
+        logger.info("Aggregation results:")
+        aggregations_df.show(truncate=False)
+        
+        return output_path
+        
+    except Exception as e:
+        raise FileOperationError(f"Failed to write aggregations to {output_dir}", 
+                               output_dir, e)
 
 
 def main():

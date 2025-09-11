@@ -16,6 +16,7 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 COPY advanced-solution/spark_aggregation_job.py .
 COPY models/models.py ./models/
 COPY services/writer_service_adv_sol.py ./services/
+COPY utils/error_handling.py ./utils/
 
 # Create directories for input and output
 RUN mkdir -p /app/input /app/output
